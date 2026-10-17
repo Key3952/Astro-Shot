@@ -28,7 +28,29 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Generate upload keystore if not provided
+      - name: Ensure .env file exists
+        run: |
+          if [ ! -f ".env" ]; then
+            touch .env
+          fi
+
+      - name: Restore debug keystore
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Generate upload keystore for release
         run: |
           if [ ! -f "my-upload-key.jks" ]; then
             keytool -genkeypair -v \
@@ -40,15 +62,15 @@ jobs:
               -storepass android \
               -keypass android \
               -dname "CN=AstroShot, OU=Android, O=Astro, L=City, S=State, C=US"
-            echo "STORE_PASSWORD=android" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
-            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
           fi
+          echo "STORE_PASSWORD=android" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> $GITHUB_ENV
 
       - name: Build Debug & Release APK
         run: ./gradlew assembleDebug assembleRelease
 
-      - name: Rename APKs
+      - name: Collect and Rename APKs
         run: |
           mkdir -p output_apks
           if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
@@ -56,6 +78,8 @@ jobs:
           fi
           if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
             cp app/build/outputs/apk/release/app-release.apk output_apks/AstroShot-release.apk
+          elif [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk output_apks/AstroShot-release-unsigned.apk
           fi
 
       - name: Upload APKs as Artifacts
@@ -65,12 +89,11 @@ jobs:
           path: output_apks/*.apk
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           files: output_apks/*.apk
-          tag_name: ${{ github.ref_name || 'v1.0.0' }}
-          name: Release ${{ github.ref_name || 'v1.0.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          name: Release ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
           draft: false
           prerelease: false
           generate_release_notes: true
