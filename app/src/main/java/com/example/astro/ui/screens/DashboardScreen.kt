@@ -44,11 +44,11 @@ fun DashboardScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
             .testTag("dashboard_screen"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Location & Sky Quality Hero Banner
+        // Location & Sky Quality Card - Compact & Balanced
         AstroCard(
             modifier = Modifier.fillMaxWidth().testTag("sky_quality_hero_card")
         ) {
@@ -61,7 +61,7 @@ fun DashboardScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(8.dp)
+                                .size(7.dp)
                                 .clip(CircleShape)
                                 .background(if (palette.isRedMode) palette.primary else Color(0xFF10B981))
                         )
@@ -70,45 +70,44 @@ fun DashboardScreen(
                             text = location.name,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = palette.textPrimary
+                            color = palette.textPrimary,
+                            maxLines = 1
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Шкала Бортля: ${location.bortleScale} • ${location.regionRu}",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "${location.regionRu} • Бортль: ${location.bortleScale}/9",
+                        style = MaterialTheme.typography.labelSmall,
                         color = palette.textMuted
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    val qualityText = when {
-                        weather == null -> "Загрузка метеоданных..."
-                        weather!!.skyQualityScore >= 80 -> "Отличная ночь для съёмки звёзд"
-                        weather!!.skyQualityScore >= 50 -> "Приемлемые условия с облачностью"
-                        else -> "Плотная облачность или сильная засветка"
+                    Spacer(modifier = Modifier.height(6.dp))
+                    // Donut chart color breakdown legend
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ChartLegendDot(color = if (palette.isRedMode) palette.primary else Color(0xFF10B981), label = "Небо ${weather?.skyQualityScore ?: 80}%")
+                        ChartLegendDot(color = if (palette.isRedMode) Color(0xFF661111) else Color(0xFF64748B), label = "Облака ${weather?.totalCloudCoverPercent ?: 15}%")
+                        ChartLegendDot(color = if (palette.isRedMode) Color(0xFFAA2222) else Color(0xFFFBBF24), label = "Луна ${moon.illuminationPercent}%")
                     }
-                    Text(
-                        text = qualityText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (palette.isRedMode) palette.primary else palette.primary
-                    )
                 }
 
                 SkyQualityScoreRing(
                     score = weather?.skyQualityScore ?: 80,
-                    modifier = Modifier.padding(start = 12.dp)
+                    cloudCoverPercent = weather?.totalCloudCoverPercent ?: 15,
+                    moonIlluminationPercent = moon.illuminationPercent,
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = palette.cardBorder)
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Quick metrics row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 MetricBadge(
                     label = "Облачность",
@@ -130,7 +129,7 @@ fun DashboardScreen(
             }
         }
 
-        // Moon Status Card
+        // Moon Status Card - Compact & Clean
         AstroCard(
             modifier = Modifier.fillMaxWidth().testTag("moon_dashboard_card"),
             onClick = { onNavigateToTab(3) }
@@ -142,9 +141,9 @@ fun DashboardScreen(
                 MoonPhaseCanvas(
                     illuminationPercent = moon.illuminationPercent,
                     ageDays = moon.ageDays,
-                    modifier = Modifier.size(72.dp)
+                    modifier = Modifier.size(56.dp)
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -158,27 +157,26 @@ fun DashboardScreen(
                             color = palette.textPrimary
                         )
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = palette.surface
                         ) {
                             Text(
                                 text = "${moon.illuminationPercent}% свет",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = palette.accent,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = moon.astroSummary,
                         style = MaterialTheme.typography.bodySmall,
                         color = palette.textSecondary,
-                        maxLines = 2
+                        maxLines = 1
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
                             text = "Восход: ${moon.moonriseTime}",
                             style = MaterialTheme.typography.labelSmall,
@@ -195,63 +193,76 @@ fun DashboardScreen(
         }
 
         // Astronomical Darkness Window
-        AstroCard(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            SectionHeader(
-                title = "Окно астрономической темноты",
-                subtitle = "Солнце ниже -18° (идеально для Млечного Пути)",
-                icon = Icons.Default.NightlightRound
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+        AstroCard(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column {
-                    Text(
-                        text = "Начало темноты",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.textMuted
-                    )
-                    Text(
-                        text = twilight.astroTwilightStart,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.textPrimary
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(palette.surface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.NightlightRound,
+                            contentDescription = null,
+                            tint = palette.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Астрономическая темнота",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.textPrimary
+                        )
+                        Text(
+                            text = "Солнце ниже -18° (без засветки)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textMuted
+                        )
+                    }
                 }
+
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = palette.surface,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    color = palette.surface
                 ) {
                     Text(
-                        text = "${twilight.darkSkyDurationHours} ч темноты",
+                        text = "${twilight.darkSkyDurationHours} ч окна",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = palette.primary,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "Конец темноты",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.textMuted
-                    )
-                    Text(
-                        text = twilight.astroTwilightEnd,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.textPrimary
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Старт: ${twilight.astroTwilightStart}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textSecondary
+                )
+                Text(
+                    text = "Финиш: ${twilight.astroTwilightEnd}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textSecondary
+                )
+            }
         }
 
-        // Aurora Borealis Snapshot
+        // Aurora Borealis Alert
         AstroCard(
             modifier = Modifier.fillMaxWidth().testTag("aurora_dashboard_card"),
             onClick = { onNavigateToTab(2) }
@@ -264,7 +275,7 @@ fun DashboardScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(34.dp)
                             .clip(CircleShape)
                             .background(if (palette.isRedMode) palette.surface else Color(0x2234D399)),
                         contentAlignment = Alignment.Center
@@ -273,20 +284,20 @@ fun DashboardScreen(
                             imageVector = Icons.Default.Storm,
                             contentDescription = null,
                             tint = if (palette.isRedMode) palette.primary else Color(0xFF34D399),
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
                             text = "Полярные сияния",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = palette.textPrimary
                         )
                         Text(
-                            text = "Kp-индекс: ${aurora.kpIndex} • Уровень ${aurora.stormLevel}",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Kp-индекс: ${aurora.kpIndex} • ${aurora.stormLevel}",
+                            style = MaterialTheme.typography.labelSmall,
                             color = palette.textSecondary
                         )
                     }
@@ -301,16 +312,10 @@ fun DashboardScreen(
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (aurora.observationChanceAtUserLat > 50) Color(0xFF34D399) else palette.textMuted,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = aurora.stormDescriptionRu,
-                style = MaterialTheme.typography.bodySmall,
-                color = palette.textMuted
-            )
         }
 
         // Quick Optics Tool Preview
@@ -318,31 +323,65 @@ fun DashboardScreen(
             modifier = Modifier.fillMaxWidth().testTag("quick_optics_card"),
             onClick = { onNavigateToTab(1) }
         ) {
-            SectionHeader(
-                title = "Параметры камеры: ${focal.toInt()} мм",
-                subtitle = "Макс. выдержка без треков звёзд",
-                icon = Icons.Default.CameraAlt,
-                trailingAction = {
-                    TextButton(onClick = { onNavigateToTab(1) }) {
-                        Text("Настроить >", color = palette.primary)
-                    }
-                }
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(palette.surface),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = palette.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Параметры камеры: ${focal.toInt()} мм",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.textPrimary
+                        )
+                        Text(
+                            text = "Выдержка без звёздных треков",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textMuted
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = { onNavigateToTab(1) },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("Оптика >", color = palette.primary, fontSize = 12.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 MetricBadge(
-                    label = "Правило NPF (точно)",
+                    label = "NPF (точно)",
                     value = "${exposure.npfRuleSeconds}",
-                    unit = "сек",
+                    unit = "с",
                     statusColor = palette.primary,
                     modifier = Modifier.weight(1f)
                 )
                 MetricBadge(
-                    label = "Правило 500 (классика)",
+                    label = "Правило 500",
                     value = "${exposure.rule500Seconds}",
-                    unit = "сек",
+                    unit = "с",
                     modifier = Modifier.weight(1f)
                 )
                 MetricBadge(
@@ -354,6 +393,24 @@ fun DashboardScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun ChartLegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            color = LocalAstroPalette.current.textMuted
+        )
     }
 }

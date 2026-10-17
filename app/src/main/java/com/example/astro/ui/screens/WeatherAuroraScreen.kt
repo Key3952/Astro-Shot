@@ -26,6 +26,8 @@ import com.example.astro.ui.components.MetricBadge
 import com.example.astro.ui.components.SectionHeader
 import com.example.astro.ui.theme.LocalAstroPalette
 
+import com.example.astro.ui.components.WeatherMapViewer
+
 @Composable
 fun WeatherAuroraScreen(
     viewModel: AstroViewModel
@@ -38,13 +40,19 @@ fun WeatherAuroraScreen(
     val aurora by viewModel.auroraState.collectAsState()
     val location by viewModel.selectedLocation.collectAsState()
 
+    val selectedLayer by viewModel.selectedMapLayer.collectAsState()
+    val selectedProvider by viewModel.selectedMapProvider.collectAsState()
+    val openWeatherApiKey by viewModel.openWeatherApiKey.collectAsState()
+    val isAggregationMode by viewModel.isAggregationMode.collectAsState()
+    val weatherComparison by viewModel.weatherComparison.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
             .testTag("weather_aurora_screen"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Top Action Bar with Refresh
         Row(
@@ -84,6 +92,22 @@ fun WeatherAuroraScreen(
                     )
                 }
             }
+        }
+
+        // Interactive Cloud & Precipitation Radar Map Card
+        AstroCard(modifier = Modifier.fillMaxWidth().testTag("interactive_map_card")) {
+            WeatherMapViewer(
+                currentLocation = location,
+                selectedLayer = selectedLayer,
+                selectedProvider = selectedProvider,
+                openWeatherApiKey = openWeatherApiKey,
+                isAggregationMode = isAggregationMode,
+                weatherComparison = weatherComparison,
+                onSelectLayer = { viewModel.setMapLayer(it) },
+                onSelectProvider = { viewModel.setMapProvider(it) },
+                onToggleAggregation = { viewModel.toggleAggregationMode() },
+                onSaveApiKey = { viewModel.setOpenWeatherApiKey(it) }
+            )
         }
 
         // Multi-Layer Cloud Breakdown Card

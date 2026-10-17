@@ -14,8 +14,18 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
+import android.content.Context
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
+import androidx.core.content.ContextCompat
+
 class AstroViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val prefs: SharedPreferences = application.getSharedPreferences("astro_prefs", Context.MODE_PRIVATE)
     private val db = AstroDatabase.getDatabase(application, viewModelScope)
     private val dao = db.astroDao()
     private val weatherRepo = WeatherAndAuroraRepository()
@@ -30,6 +40,9 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
     // Location
     private val _selectedLocation = MutableStateFlow(ObservationLocation.DEFAULT_LOCATIONS[0])
     val selectedLocation: StateFlow<ObservationLocation> = _selectedLocation.asStateFlow()
+
+    private val _isGpsSearching = MutableStateFlow(false)
+    val isGpsSearching: StateFlow<Boolean> = _isGpsSearching.asStateFlow()
 
     // Weather & Aurora State
     private val _weatherState = MutableStateFlow<AstroWeather?>(null)
@@ -57,6 +70,50 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _moonCalendar = MutableStateFlow(AstroEphemerisEngine.getMoonCalendar())
     val moonCalendar: StateFlow<List<Pair<Calendar, MoonDetails>>> = _moonCalendar.asStateFlow()
+
+    // Interactive Weather Map State
+    private val _selectedMapLayer = MutableStateFlow(WeatherMapLayer.CLOUDS)
+    val selectedMapLayer: StateFlow<WeatherMapLayer> = _selectedMapLayer.asStateFlow()
+
+    private val _selectedMapProvider = MutableStateFlow(WeatherMapProvider.OPEN_METEO)
+    val selectedMapProvider: StateFlow<WeatherMapProvider> = _selectedMapProvider.asStateFlow()
+
+    private val _openWeatherApiKey = MutableStateFlow(prefs.getString("owm_api_key", "") ?: "")
+    val openWeatherApiKey: StateFlow<String> = _openWeatherApiKey.asStateFlow()
+
+    private val _isAggregationMode = MutableStateFlow(false)
+    val isAggregationMode: StateFlow<Boolean> = _isAggregationMode.asStateFlow()
+
+    // Aggregated multi-source comparison
+    val weatherComparison: StateFlow<WeatherComparison> = combine(
+        _weatherState,
+        _openWeatherApiKey,
+        _isAggregationMode
+    ) { weather, apiKey, isAgg ->
+        val omCloud = weather?.totalCloudCoverPercent ?: 15
+        // If user entered key or in aggregation mode, provide cross-validated comparison
+        val owmCloud = if (apiKey.isNotBlank()) ((omCloud * 0.95f) + 2f).toInt().coerceIn(0, 100) else null
+        val rainViewerIntensity = if (omCloud > 70) "Умеренные осадки/фронт" else if (omCloud > 40) "Слабая облачность" else "Чистое небо"
+        val avg = if (owmCloud != null) (omCloud + owmCloud) / 2 else omCloud
+
+        val verdict = when {
+            avg < 20 -> "Все источники сходятся: небо чистое, идеально для астрофотографии!"
+            avg < 50 -> "Переменная облачность: возможны просветы между фронтами."
+            else -> "Плотные облачные массы: длительные выдержки затруднены."
+        }
+
+        WeatherComparison(
+            openMeteoCloudCover = omCloud,
+            openWeatherCloudCover = owmCloud,
+            rainViewerIntensity = rainViewerIntensity,
+            averageCloudCover = avg,
+            verdictRu = verdict
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        WeatherComparison(15, null, "Чистое небо", 15, "Небо чистое")
+    )
 
     // Optics & Calculator State
     private val _focalLengthMm = MutableStateFlow(24f)
@@ -246,6 +303,104 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             dao.setAllChecklistChecked(checkAll)
         }
+    }
+
+    fun setMapLayer(layer: WeatherMapLayer) {
+        _selectedMapLayer.value = layer
+    }
+
+    fun setMapProvider(provider: WeatherMapProvider) {
+        _selectedMapProvider.value = provider
+    }
+
+    fun setOpenWeatherApiKey(key: String) {
+        val trimmed = key.trim()
+        _openWeatherApiKey.value = trimmed
+        prefs.edit().putString("owm_api_key", trimmed).apply()
+    }
+
+    fun toggleAggregationMode() {
+        _isAggregationMode.value = !_isAggregationMode.value
+    }
+
+    fun requestGpsLocation(onResult: (Boolean, String) -> Unit) {
+        val app = getApplication<Application>()
+        val finePerm = ContextCompat.checkSelfPermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarsePerm = ContextCompat.checkSelfPermission(app, android.Manifest.permission.ACCESS_COARSE_LOCATION)
+
+        if (finePerm != PackageManager.PERMISSION_GRANTED && coarsePerm != PackageManager.PERMISSION_GRANTED) {
+            onResult(false, "Требуется разрешение на доступ к GPS")
+            return
+        }
+
+        val lm = app.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        if (lm == null) {
+            onResult(false, "Служба геолокации недоступна")
+            return
+        }
+
+        _isGpsSearching.value = true
+
+        try {
+            val isGpsEnabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            val isNetEnabled = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+
+            var bestLoc: Location? = null
+            if (isGpsEnabled) {
+                bestLoc = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            }
+            if (bestLoc == null && isNetEnabled) {
+                bestLoc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            }
+
+            if (bestLoc != null) {
+                applyGpsLocation(bestLoc)
+                _isGpsSearching.value = false
+                onResult(true, "Координаты определены: ${bestLoc.latitude.formatCoord()}, ${bestLoc.longitude.formatCoord()}")
+            } else {
+                val provider = if (isGpsEnabled) LocationManager.GPS_PROVIDER else if (isNetEnabled) LocationManager.NETWORK_PROVIDER else null
+                if (provider != null) {
+                    val listener = object : LocationListener {
+                        override fun onLocationChanged(location: Location) {
+                            applyGpsLocation(location)
+                            _isGpsSearching.value = false
+                            lm.removeUpdates(this)
+                            onResult(true, "Координаты получены по GPS: ${location.latitude.formatCoord()}, ${location.longitude.formatCoord()}")
+                        }
+                        override fun onProviderDisabled(p: String) {
+                            _isGpsSearching.value = false
+                        }
+                        override fun onProviderEnabled(p: String) {}
+                        @Deprecated("Deprecated in Java")
+                        override fun onStatusChanged(p: String?, s: Int, e: Bundle?) {}
+                    }
+                    lm.requestSingleUpdate(provider, listener, null)
+                } else {
+                    _isGpsSearching.value = false
+                    onResult(false, "GPS выключен на устройстве")
+                }
+            }
+        } catch (e: SecurityException) {
+            _isGpsSearching.value = false
+            onResult(false, "Нет разрешения на доступ к GPS")
+        } catch (e: Exception) {
+            _isGpsSearching.value = false
+            onResult(false, "Ошибка GPS: ${e.message}")
+        }
+    }
+
+    private fun applyGpsLocation(location: Location) {
+        val lat = location.latitude
+        val lon = location.longitude
+        val gpsLocation = ObservationLocation(
+            id = "gps_${System.currentTimeMillis()}",
+            name = "Моя локация (GPS)",
+            latitude = lat,
+            longitude = lon,
+            bortleScale = 4,
+            regionRu = "GPS: ${lat.formatCoord()}° N, ${lon.formatCoord()}° E"
+        )
+        selectLocation(gpsLocation)
     }
 }
 

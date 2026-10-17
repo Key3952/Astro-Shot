@@ -8,10 +8,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -271,117 +272,245 @@ fun MoonPhaseCanvas(
 }
 
 /**
- * Sky Quality circular score meter
+ * Multi-segment circular ring diagram (Кольцевая диаграмма)
+ * Displays breakdown of clear sky, clouds, and moon illumination.
+ * Strictly constrained to 96dp size to completely prevent full-screen expansion.
  */
 @Composable
 fun SkyQualityScoreRing(
     score: Int,
-    modifier: Modifier = Modifier.size(90.dp)
+    cloudCoverPercent: Int = 15,
+    moonIlluminationPercent: Int = 10,
+    modifier: Modifier = Modifier
 ) {
     val palette = LocalAstroPalette.current
+    val ringSize = 92.dp
+
     Box(
-        modifier = modifier,
+        modifier = modifier
+            .size(ringSize)
+            .wrapContentSize(Alignment.Center),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = 8.dp.toPx()
-            val arcSize = size.minDimension - strokeWidth
+        Canvas(modifier = Modifier.size(ringSize)) {
+            val strokeWidth = 7.dp.toPx()
+            val diameter = size.minDimension - strokeWidth
             val topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f)
+            val arcSize = Size(diameter, diameter)
 
-            // Background circle
+            // Base track circle
             drawArc(
                 color = palette.surface,
-                startAngle = 135f,
-                sweepAngle = 270f,
+                startAngle = 0f,
+                sweepAngle = 360f,
                 useCenter = false,
                 topLeft = topLeft,
-                size = Size(arcSize, arcSize),
+                size = arcSize,
                 style = Stroke(width = strokeWidth)
             )
 
-            // Active progress arc
-            val progressSweep = (score / 100f).coerceIn(0f, 1f) * 270f
-            val arcColor = when {
-                palette.isRedMode -> palette.primary
-                score >= 75 -> palette.primary
-                score >= 45 -> palette.accent
-                else -> Color(0xFFEF4444)
+            // Donut segments calculation
+            val total = (score + cloudCoverPercent + moonIlluminationPercent).coerceAtLeast(100).toFloat()
+            val skySweep = (score / total) * 360f
+            val cloudSweep = (cloudCoverPercent / total) * 360f
+            val moonSweep = (moonIlluminationPercent / total) * 360f
+
+            val skyColor = if (palette.isRedMode) palette.primary else Color(0xFF10B981)
+            val cloudColor = if (palette.isRedMode) Color(0xFF661111) else Color(0xFF64748B)
+            val moonColor = if (palette.isRedMode) Color(0xFFAA2222) else Color(0xFFFBBF24)
+
+            var currentAngle = -90f // Start from top 12 o'clock
+
+            // 1. Clear sky segment
+            if (skySweep > 3f) {
+                drawArc(
+                    color = skyColor,
+                    startAngle = currentAngle + 2f,
+                    sweepAngle = (skySweep - 4f).coerceAtLeast(1f),
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+                currentAngle += skySweep
             }
 
-            drawArc(
-                color = arcColor,
-                startAngle = 135f,
-                sweepAngle = progressSweep,
-                useCenter = false,
-                topLeft = topLeft,
-                size = Size(arcSize, arcSize),
-                style = Stroke(width = strokeWidth)
-            )
+            // 2. Cloud segment
+            if (cloudSweep > 3f) {
+                drawArc(
+                    color = cloudColor,
+                    startAngle = currentAngle + 2f,
+                    sweepAngle = (cloudSweep - 4f).coerceAtLeast(1f),
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+                currentAngle += cloudSweep
+            }
+
+            // 3. Moon illumination segment
+            if (moonSweep > 3f) {
+                drawArc(
+                    color = moonColor,
+                    startAngle = currentAngle + 2f,
+                    sweepAngle = (moonSweep - 4f).coerceAtLeast(1f),
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
         }
+
+        // Centered percentage and label
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "$score%",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.ExtraBold,
-                color = palette.textPrimary
+                color = palette.textPrimary,
+                fontSize = 18.sp
             )
             Text(
                 text = "Индекс",
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.textMuted,
-                fontSize = 10.sp
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
 }
 
 /**
- * Dialog to choose location preset or enter coordinates
+ * Dialog to choose location preset or enter coordinates / GPS
  */
 @Composable
 fun LocationSelectorDialog(
     currentLocation: ObservationLocation,
+    isGpsSearching: Boolean = false,
+    onTriggerGps: () -> Unit,
     onSelectLocation: (ObservationLocation) -> Unit,
     onSetCustomCoords: (lat: Double, lon: Double) -> Unit,
     onDismiss: () -> Unit
 ) {
     val palette = LocalAstroPalette.current
     var isCustomMode by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf(0) } // 0: Северо-Запад, 1: Все города, 2: Тёмное небо
     var latInput by remember { mutableStateOf(currentLocation.latitude.toString()) }
     var lonInput by remember { mutableStateOf(currentLocation.longitude.toString()) }
+
+    val filteredLocations = remember(selectedCategory) {
+        when (selectedCategory) {
+            0 -> ObservationLocation.DEFAULT_LOCATIONS.filter { it.isNorthWest }
+            1 -> ObservationLocation.DEFAULT_LOCATIONS
+            2 -> ObservationLocation.DEFAULT_LOCATIONS.filter { it.bortleScale <= 3 }
+            else -> ObservationLocation.DEFAULT_LOCATIONS
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = palette.cardBg,
             border = BorderStroke(1.dp, palette.cardBorder),
-            modifier = Modifier.fillMaxWidth().testTag("location_dialog")
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("location_dialog")
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Выбор локации",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.textPrimary
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = palette.textMuted)
+                    }
+                }
+
                 Text(
-                    text = "Выбор локации съёмки",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.textPrimary
-                )
-                Text(
-                    text = "Координаты определяют высоту Солнца, сумерки, погоду и вероятность сияния.",
+                    text = "Координаты определяют высоту Солнца, сумерки, облака и полярные сияния.",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.textMuted,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
 
+                // GPS Search Button
+                FilledTonalButton(
+                    onClick = onTriggerGps,
+                    enabled = !isGpsSearching,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (palette.isRedMode) palette.surface else Color(0x3338BDF8)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("gps_search_button")
+                ) {
+                    if (isGpsSearching) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = palette.primary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Определяем GPS координаты...", color = palette.primary)
+                    } else {
+                        Icon(Icons.Default.MyLocation, contentDescription = null, tint = palette.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Определить по GPS (моё место)", fontWeight = FontWeight.Bold, color = palette.textPrimary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 if (!isCustomMode) {
+                    // Category filters
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedCategory == 0,
+                            onClick = { selectedCategory = 0 },
+                            label = { Text("Северо-Запад (${ObservationLocation.DEFAULT_LOCATIONS.count { it.isNorthWest }})", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = selectedCategory == 1,
+                            onClick = { selectedCategory = 1 },
+                            label = { Text("Все города", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = selectedCategory == 2,
+                            onClick = { selectedCategory = 2 },
+                            label = { Text("Тёмное небо", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 280.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .heightIn(max = 240.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        ObservationLocation.DEFAULT_LOCATIONS.forEach { loc ->
+                        filteredLocations.forEach { loc ->
                             val isSelected = loc.id == currentLocation.id
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = if (isSelected) palette.surface else Color.Transparent,
                                 border = BorderStroke(
                                     1.dp,
@@ -395,7 +524,7 @@ fun LocationSelectorDialog(
                                     }
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(12.dp),
+                                    modifier = Modifier.padding(10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
@@ -407,7 +536,7 @@ fun LocationSelectorDialog(
                                             color = palette.textPrimary
                                         )
                                         Text(
-                                            text = "${loc.regionRu} • Шкала Бортля: ${loc.bortleScale}/9",
+                                            text = "${loc.regionRu} • Бортль: ${loc.bortleScale}/9",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = palette.textMuted
                                         )
@@ -417,7 +546,7 @@ fun LocationSelectorDialog(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = null,
                                             tint = palette.primary,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }
@@ -425,14 +554,16 @@ fun LocationSelectorDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = { isCustomMode = true },
-                        modifier = Modifier.fillMaxWidth().testTag("custom_coords_button")
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_coords_button")
                     ) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null)
+                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Ввести точные GPS координаты")
+                        Text("Ввести координаты вручную")
                     }
                 } else {
                     OutlinedTextField(

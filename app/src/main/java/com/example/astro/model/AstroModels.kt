@@ -143,24 +143,67 @@ data class AuroraActivity(
 /**
  * Preset observation location
  */
+/**
+ * Preset observation location
+ */
 data class ObservationLocation(
     val id: String,
     val name: String,
     val latitude: Double,
     val longitude: Double,
     val bortleScale: Int, // 1 to 9
-    val regionRu: String
+    val regionRu: String,
+    val isNorthWest: Boolean = false
 ) {
     companion object {
         val DEFAULT_LOCATIONS = listOf(
+            // Северо-Запад России (СЗФО)
+            ObservationLocation("spb", "Санкт-Петербург (Дворцовая)", 59.93, 30.33, 7, "Северо-Запад", true),
+            ObservationLocation("teriberka", "Териберка (Кольский п-ов, Сияния)", 69.16, 35.14, 2, "Мурманская обл.", true),
+            ObservationLocation("murmansk", "Мурманск", 68.96, 33.08, 6, "Мурманская обл.", true),
+            ObservationLocation("khibiny", "Кировск / Хибины (Горы)", 67.61, 33.67, 3, "Мурманская обл.", true),
+            ObservationLocation("petrozavodsk", "Петрозаводск (Онежское оз.)", 61.79, 34.36, 5, "Карелия", true),
+            ObservationLocation("sortavala", "Сортавала (Ладожские шхеры)", 61.70, 30.68, 3, "Карелия", true),
+            ObservationLocation("arhangelsk", "Архангельск (Северная Двина)", 64.54, 40.53, 5, "Архангельская обл.", true),
+            ObservationLocation("severodvinsk", "Северодвинск (Белое море)", 64.56, 39.83, 5, "Архангельская обл.", true),
+            ObservationLocation("novgorod", "Великий Новгород (Ильмень)", 58.52, 31.27, 5, "Новгородская обл.", true),
+            ObservationLocation("pskov", "Псков (Псковское оз.)", 57.82, 28.33, 5, "Псковская обл.", true),
+            ObservationLocation("vyborg", "Выборг (Финский залив)", 60.71, 28.75, 4, "Ленинградская обл.", true),
+            ObservationLocation("vologda", "Вологда", 59.22, 39.89, 5, "Вологодская обл.", true),
+            ObservationLocation("syktyvkar", "Сыктывкар", 61.67, 50.81, 5, "Республика Коми", true),
+            ObservationLocation("kaliningrad", "Калининград (Балтика)", 54.71, 20.51, 6, "Калининградская обл.", true),
+
+            // Топовые астроклиматические локации России
             ObservationLocation("caucasus", "САО РАН (Архыз, Кавказ)", 43.65, 41.44, 2, "Кавказ"),
             ObservationLocation("altai", "Чемал / Актру (Алтай)", 51.40, 86.00, 1, "Алтай"),
             ObservationLocation("baikal", "Остров Ольхон (Байкал)", 53.15, 107.38, 2, "Байкал"),
-            ObservationLocation("teriberka", "Териберка (Сияния, Заполярье)", 69.16, 35.14, 2, "Мурманская обл."),
             ObservationLocation("crimea", "КрАО (Научный, Крым)", 44.72, 34.01, 3, "Крым"),
-            ObservationLocation("spb", "Санкт-Петербург / ЛО", 59.93, 30.33, 6, "Северо-Запад"),
             ObservationLocation("msk", "Москва и Подмосковье", 55.75, 37.61, 7, "Центральный"),
             ObservationLocation("novosib", "Новосибирск (НСО)", 55.00, 82.93, 6, "Сибирь")
         )
     }
 }
+
+/**
+ * Interactive Weather Map layers and providers
+ */
+enum class WeatherMapLayer(val labelRu: String) {
+    CLOUDS("Облачность"),
+    RADAR_PRECIPITATION("Радар осадков"),
+    WIND("Потоки ветра"),
+    TEMPERATURE("Температура")
+}
+
+enum class WeatherMapProvider(val titleRu: String, val requiresKey: Boolean, val freeDescriptionRu: String) {
+    OPEN_METEO("Open-Meteo", false, "Бесплатно, без ключа. Полный послойный расчет."),
+    RAINVIEWER("RainViewer Radar", false, "Бесплатно, без ключа. Живой радар осадков и облачности."),
+    OPENWEATHERMAP("OpenWeatherMap", true, "Бесплатный ключ на 1 млн запросов/мес. Глобальные тайлы.")
+}
+
+data class WeatherComparison(
+    val openMeteoCloudCover: Int,
+    val openWeatherCloudCover: Int?,
+    val rainViewerIntensity: String,
+    val averageCloudCover: Int,
+    val verdictRu: String
+)

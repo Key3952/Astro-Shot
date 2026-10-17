@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -34,11 +37,13 @@ jobs:
             touch .env
           fi
 
-      - name: Restore debug keystore
+      - name: Restore or generate debug keystore
         run: |
           if [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-          else
+            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
+          fi
+          if [ ! -f "debug.keystore" ] || [ ! -s "debug.keystore" ]; then
+            echo "Generating fresh debug.keystore..."
             keytool -genkeypair -v \
               -keystore debug.keystore \
               -alias androiddebugkey \
@@ -49,10 +54,14 @@ jobs:
               -keypass android \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
+          # Ensure debug.keystore exists in both root and app directory
+          cp debug.keystore app/debug.keystore 2>/dev/null || true
+          ls -la debug.keystore
 
       - name: Generate upload keystore for release
         run: |
           if [ ! -f "my-upload-key.jks" ]; then
+            echo "Generating my-upload-key.jks..."
             keytool -genkeypair -v \
               -keystore my-upload-key.jks \
               -alias upload \
@@ -81,6 +90,7 @@ jobs:
           elif [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
             cp app/build/outputs/apk/release/app-release-unsigned.apk output_apks/AstroShot-release-unsigned.apk
           fi
+          ls -la output_apks/
 
       - name: Upload APKs as Artifacts
         uses: actions/upload-artifact@v4
@@ -89,6 +99,7 @@ jobs:
           path: output_apks/*.apk
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           files: output_apks/*.apk

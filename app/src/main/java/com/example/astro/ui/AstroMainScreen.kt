@@ -1,6 +1,10 @@
 package com.example.astro.ui
 
+import android.Manifest
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,16 +30,50 @@ import androidx.compose.ui.unit.sp
 import com.example.astro.ui.components.LocationSelectorDialog
 import com.example.astro.ui.screens.*
 import com.example.astro.ui.theme.LocalAstroPalette
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AstroMainScreen(viewModel: AstroViewModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     val palette = LocalAstroPalette.current
     val currentTab by viewModel.currentTab.collectAsState()
     val isRedMode by viewModel.isRedNightMode.collectAsState()
     val currentLocation by viewModel.selectedLocation.collectAsState()
+    val isGpsSearching by viewModel.isGpsSearching.collectAsState()
 
     var showLocationDialog by remember { mutableStateOf(false) }
+
+    // Runtime Permission Launcher for GPS
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            viewModel.requestGpsLocation { success, msg ->
+                scope.launch {
+                    snackbarHostState.showSnackbar(msg)
+                }
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("Доступ к GPS отклонен. Выберите город вручную из списка.")
+            }
+        }
+    }
+
+    fun startGpsSearch() {
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
 
     // If on a secondary tab, pressing Back takes you back to Dashboard
     BackHandler(enabled = currentTab != 0) {
@@ -42,6 +81,7 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -78,7 +118,7 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
                     }
                 },
                 actions = {
-                    // Location button
+                    // Location button (Opens Dialog with GPS button & NW cities)
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = palette.surface,
@@ -90,15 +130,23 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.LocationOn,
-                                contentDescription = "Локация",
-                                tint = palette.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
+                            if (isGpsSearching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    color = palette.primary,
+                                    strokeWidth = 1.5.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = "Локация",
+                                    tint = palette.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = currentLocation.name.take(14),
+                                text = currentLocation.name.take(13),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = palette.textPrimary,
                                 maxLines = 1
@@ -204,6 +252,11 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
     if (showLocationDialog) {
         LocationSelectorDialog(
             currentLocation = currentLocation,
+            isGpsSearching = isGpsSearching,
+            onTriggerGps = {
+                startGpsSearch()
+                showLocationDialog = false
+            },
             onSelectLocation = { viewModel.selectLocation(it) },
             onSetCustomCoords = { lat, lon -> viewModel.setCustomCoordinates(lat, lon) },
             onDismiss = { showLocationDialog = false }
