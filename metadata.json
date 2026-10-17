@@ -1,0 +1,6 @@
+{
+  "name": "AstroShot",
+  "description": "Помощник для астрофотографии: планирование съёмок, параметры камеры (NPF и 500), прогноз погоды и облачности, предсказание полярных сияний, фазы Луны и ночной красный режим.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

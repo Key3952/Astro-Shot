@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for AstroShot: an advanced astrophotography assistant app featuring shoot planning, camera calculation tools (500 Rule, NPF Rule, Star Trails, Timelapse, Field of View), live weather and cloud layer forecasting (Open-Meteo), aurora Kp-index and oval predictions (NOAA/open data), moon phase tracking with illumination & golden/blue hour ephemeris, and a red night-vision mode for dark sky field sessions.",
+  "updatedAt": "2026-10-17T08:24:04.423505897Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
