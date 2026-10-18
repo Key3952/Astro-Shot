@@ -162,8 +162,8 @@ fun MoonEphemerisScreen(
             )
             Spacer(modifier = Modifier.height(12.dp))
 
-            val dateFormat = SimpleDateFormat("d MMM", Locale("ru"))
-            val dayNameFormat = SimpleDateFormat("E", Locale("ru"))
+            val dateFormat = SimpleDateFormat("d MMM", Locale.forLanguageTag("ru"))
+            val dayNameFormat = SimpleDateFormat("E", Locale.forLanguageTag("ru"))
 
             Row(
                 modifier = Modifier

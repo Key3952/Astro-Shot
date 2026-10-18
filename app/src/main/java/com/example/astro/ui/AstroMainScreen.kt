@@ -193,7 +193,7 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
                     NavigationItem("Оптика", Icons.Default.CameraAlt, 1),
                     NavigationItem("Погода", Icons.Default.Cloud, 2),
                     NavigationItem("Луна", Icons.Default.NightlightRound, 3),
-                    NavigationItem("План", Icons.Default.EventNote, 4)
+                    NavigationItem("План", Icons.Default.DateRange, 4)
                 )
 
                 items.forEach { item ->
