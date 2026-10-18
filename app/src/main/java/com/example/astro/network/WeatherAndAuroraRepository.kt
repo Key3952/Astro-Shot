@@ -1,14 +1,14 @@
 package com.example.astro.network
 
-import com.example.astro.model.AstroWeather
-import com.example.astro.model.AuroraActivity
-import com.example.astro.model.CondensationRisk
-import com.example.astro.model.HourlyAstroWeather
+import com.example.astro.model.*
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.Calendar
@@ -22,8 +22,8 @@ class WeatherAndAuroraRepository {
         .build()
 
     private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
         .build()
 
     private val openMeteoApi: OpenMeteoService by lazy {
@@ -171,14 +171,74 @@ class WeatherAndAuroraRepository {
     }
 
     /**
-     * Calculates Aurora Borealis activity and observation probability
+     * Calculates Aurora Borealis activity and observation probability.
+     * Optionally fetches real-time Kp index from NOAA SWPC satellite feed.
      */
-    fun getAuroraForecast(userLatitude: Double): AuroraActivity {
-        // Solar Cycle 25 realistic Kp baseline with periodic variations
+    suspend fun getAuroraForecast(
+        userLatitude: Double,
+        source: SpaceWeatherSource = SpaceWeatherSource.NOAA_SWPC_LIVE
+    ): AuroraActivity = withContext(Dispatchers.IO) {
+        var liveKp: Float? = null
+
+        if (source == SpaceWeatherSource.NOAA_SWPC_LIVE) {
+            liveKp = fetchNoaaLiveKp()
+        }
+
+        val roundedKp: Float
+        if (liveKp != null) {
+            roundedKp = (liveKp * 10f).roundToInt() / 10f
+        } else {
+            // Solar Cycle 25 realistic Kp baseline with periodic variations
+            val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+            val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
+            val baseCycle = 2.8 + 1.2 * sin(day * 0.15) + 0.8 * cos(hour * 0.35)
+            val kp = baseCycle.toFloat().coerceIn(0.5f, 8.5f)
+            roundedKp = (kp * 10f).roundToInt() / 10f
+        }
+
+        val (stormLevel, stormDesc) = when {
+            roundedKp >= 8.0f -> "G4" to "Очень сильная геомагнитная буря! Сияния видны до широты 45°"
+            roundedKp >= 7.0f -> "G3" to "Сильная геомагнитная буря! Видимость до широты 50°"
+            roundedKp >= 6.0f -> "G2" to "Умеренная буря: сияния видны в средней полосе (до 54°)"
+            roundedKp >= 5.0f -> "G1" to "Слабая буря: сияния видны на широтах Санкт-Петербурга (до 58°)"
+            roundedKp >= 4.0f -> "G0+" to "Повышенная активность: отличная видимость в Заполярье (до 62°)"
+            roundedKp >= 3.0f -> "G0" to "Неустойчивое магнитное поле: слабое свечение в приполярных зонах"
+            else -> "G0" to "Спокойное геомагнитное поле. Сияния только в высоких широтах (> 67°)"
+        }
+
+        val thresholdLat = (69.0f - (roundedKp * 2.5f)).coerceIn(44f, 72f)
+        val latDiff = userLatitude.toFloat() - thresholdLat
+        val chancePercent = when {
+            latDiff >= 4.0f -> 95
+            latDiff >= 1.0f -> 80
+            latDiff >= -1.0f -> 55
+            latDiff >= -3.0f -> 30
+            latDiff >= -6.0f -> 10
+            else -> 0
+        }
+
+        val recommendedSettings = when {
+            roundedKp >= 6.0f -> "Быстрое динамичное сияние: ISO 1600-3200, выдержка 2-4 сек, f/1.4 - f/2.8"
+            roundedKp >= 4.0f -> "Умеренная дуга: ISO 3200-6400, выдержка 5-8 сек, диафрагма максимально открыта"
+            else -> "Слабое зеленое свечение: ISO 6400, выдержка 8-15 сек (NPF limit), штатив"
+        }
+
+        AuroraActivity(
+            kpIndex = roundedKp,
+            stormLevel = stormLevel,
+            stormDescriptionRu = if (liveKp != null) "$stormDesc [NOAA Live Stream]" else stormDesc,
+            visibilityLatitudeThreshold = (thresholdLat * 10f).roundToInt() / 10f,
+            observationChanceAtUserLat = chancePercent,
+            recommendedSettings = recommendedSettings
+        )
+    }
+
+    /**
+     * Fast offline initial aurora forecast
+     */
+    fun getAuroraForecastSync(userLatitude: Double): AuroraActivity {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
-
-        // Simulated dynamic Kp index fluctuating between 2.0 and 6.3
         val baseCycle = 2.8 + 1.2 * sin(day * 0.15) + 0.8 * cos(hour * 0.35)
         val kp = baseCycle.toFloat().coerceIn(0.5f, 8.5f)
         val roundedKp = (kp * 10f).roundToInt() / 10f
@@ -193,11 +253,7 @@ class WeatherAndAuroraRepository {
             else -> "G0" to "Спокойное геомагнитное поле. Сияния только в высоких широтах (> 67°)"
         }
 
-        // Required latitude threshold for Kp:
-        // Kp 9 -> 45°, Kp 7 -> 50°, Kp 5 -> 58°, Kp 3 -> 63°, Kp 1 -> 68°
         val thresholdLat = (69.0f - (roundedKp * 2.5f)).coerceIn(44f, 72f)
-
-        // Probability calculation for user latitude
         val latDiff = userLatitude.toFloat() - thresholdLat
         val chancePercent = when {
             latDiff >= 4.0f -> 95
@@ -222,5 +278,275 @@ class WeatherAndAuroraRepository {
             observationChanceAtUserLat = chancePercent,
             recommendedSettings = recommendedSettings
         )
+    }
+
+    /**
+     * Query NOAA Space Weather Prediction Center for the planetary K-index
+     */
+    private fun fetchNoaaLiveKp(): Float? {
+        return try {
+            val request = Request.Builder()
+                .url("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json")
+                .header("User-Agent", "AstroShot-Android")
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: return null
+                val jsonArray = JSONArray(body)
+                if (jsonArray.length() > 1) {
+                    val lastRow = jsonArray.getJSONArray(jsonArray.length() - 1)
+                    val kpString = lastRow.optString(1, "")
+                    kpString.toFloatOrNull()
+                } else null
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Fetches NASA Astronomy Picture of the Day (APOD)
+     */
+    suspend fun fetchNasaApod(apiKey: String): NasaApodData? = withContext(Dispatchers.IO) {
+        try {
+            val key = if (apiKey.isNotBlank()) apiKey else "DEMO_KEY"
+            val url = "https://api.nasa.gov/planetary/apod?api_key=$key"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "AstroShot-Android")
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: return@withContext null
+                val json = JSONObject(body)
+                NasaApodData(
+                    title = json.optString("title", "Космический объект NASA"),
+                    date = json.optString("date", ""),
+                    explanation = json.optString("explanation", ""),
+                    url = json.optString("url", ""),
+                    hdUrl = json.optString("hdurl", null),
+                    mediaType = json.optString("media_type", "image")
+                )
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Test and validate OpenWeatherMap API connection
+     */
+    suspend fun testOpenWeatherMap(apiKey: String, lat: Double, lon: Double): Result<Int> =
+        withContext(Dispatchers.IO) {
+            if (apiKey.isBlank()) return@withContext Result.failure(IllegalArgumentException("Ключ не введен"))
+            try {
+                val url = "https://api.openweathermap.org/data/2.5/weather?lat=$lat&lon=$lon&appid=$apiKey&units=metric&lang=ru"
+                val request = Request.Builder().url(url).build()
+                val response = okHttpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@withContext Result.failure(Exception("Пустой ответ"))
+                    val json = JSONObject(body)
+                    val clouds = json.optJSONObject("clouds")?.optInt("all", 0) ?: 0
+                    Result.success(clouds)
+                } else {
+                    Result.failure(Exception("HTTP ${response.code}: Ошибка авторизации ключа OWM"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Test and validate WeatherAPI.com connection
+     */
+    suspend fun testWeatherApi(apiKey: String, lat: Double, lon: Double): Result<Int> =
+        withContext(Dispatchers.IO) {
+            if (apiKey.isBlank()) return@withContext Result.failure(IllegalArgumentException("Ключ не введен"))
+            try {
+                val url = "https://api.weatherapi.com/v1/forecast.json?key=$apiKey&q=$lat,$lon&days=1&aqi=no"
+                val request = Request.Builder().url(url).build()
+                val response = okHttpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@withContext Result.failure(Exception("Пустой ответ"))
+                    val json = JSONObject(body)
+                    val current = json.optJSONObject("current")
+                    val cloud = current?.optInt("cloud", 0) ?: 0
+                    Result.success(cloud)
+                } else {
+                    Result.failure(Exception("HTTP ${response.code}: Ошибка ключа WeatherAPI"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Diagnostic ping for any configured data provider
+     */
+    suspend fun testDataSource(
+        id: String,
+        apiKey: String,
+        lat: Double,
+        lon: Double
+    ): DataSourcePingResult = withContext(Dispatchers.IO) {
+        val start = System.currentTimeMillis()
+        try {
+            when (id) {
+                "open_meteo" -> {
+                    val resp = openMeteoApi.getAstroWeather(lat, lon)
+                    val ms = System.currentTimeMillis() - start
+                    val ok = resp.hourly?.cloudCover != null
+                    DataSourcePingResult(
+                        id = id,
+                        nameRu = "Open-Meteo",
+                        categoryRu = "Метеорология",
+                        isOnline = ok,
+                        latencyMs = ms,
+                        statusMessageRu = if (ok) "Онлайн, DWD & ECMWF активны" else "Ошибка данных",
+                        requiresKey = false,
+                        hasKey = true
+                    )
+                }
+                "owm" -> {
+                    if (apiKey.isBlank()) {
+                        DataSourcePingResult(
+                            id = id,
+                            nameRu = "OpenWeatherMap",
+                            categoryRu = "Погода и Радары",
+                            isOnline = false,
+                            latencyMs = 0,
+                            statusMessageRu = "Ключ не введен (бесплатно на openweathermap.org)",
+                            requiresKey = true,
+                            hasKey = false
+                        )
+                    } else {
+                        val res = testOpenWeatherMap(apiKey, lat, lon)
+                        val ms = System.currentTimeMillis() - start
+                        DataSourcePingResult(
+                            id = id,
+                            nameRu = "OpenWeatherMap",
+                            categoryRu = "Погода и Радары",
+                            isOnline = res.isSuccess,
+                            latencyMs = ms,
+                            statusMessageRu = if (res.isSuccess) "Подключен, облачность ${res.getOrNull()}%" else res.exceptionOrNull()?.message ?: "Сбой",
+                            requiresKey = true,
+                            hasKey = true
+                        )
+                    }
+                }
+                "weather_api" -> {
+                    if (apiKey.isBlank()) {
+                        DataSourcePingResult(
+                            id = id,
+                            nameRu = "WeatherAPI.com",
+                            categoryRu = "Астро-прогноз",
+                            isOnline = false,
+                            latencyMs = 0,
+                            statusMessageRu = "Ключ не введен (weatherapi.com)",
+                            requiresKey = true,
+                            hasKey = false
+                        )
+                    } else {
+                        val res = testWeatherApi(apiKey, lat, lon)
+                        val ms = System.currentTimeMillis() - start
+                        DataSourcePingResult(
+                            id = id,
+                            nameRu = "WeatherAPI.com",
+                            categoryRu = "Астро-прогноз",
+                            isOnline = res.isSuccess,
+                            latencyMs = ms,
+                            statusMessageRu = if (res.isSuccess) "Подключен, облачность ${res.getOrNull()}%" else res.exceptionOrNull()?.message ?: "Сбой",
+                            requiresKey = true,
+                            hasKey = true
+                        )
+                    }
+                }
+                "noaa_swpc" -> {
+                    val kp = fetchNoaaLiveKp()
+                    val ms = System.currentTimeMillis() - start
+                    val ok = kp != null
+                    DataSourcePingResult(
+                        id = id,
+                        nameRu = "NOAA SWPC",
+                        categoryRu = "Геомагнетизм и Сияния",
+                        isOnline = ok,
+                        latencyMs = ms,
+                        statusMessageRu = if (ok) "Спутниковый поток онлайн: Kp = $kp" else "Офлайн fallback активен",
+                        requiresKey = false,
+                        hasKey = true
+                    )
+                }
+                "rain_viewer" -> {
+                    val req = Request.Builder().url("https://api.rainviewer.com/public/weather-maps.json").build()
+                    val resp = okHttpClient.newCall(req).execute()
+                    val ms = System.currentTimeMillis() - start
+                    DataSourcePingResult(
+                        id = id,
+                        nameRu = "RainViewer Radar",
+                        categoryRu = "Радар осадков",
+                        isOnline = resp.isSuccessful,
+                        latencyMs = ms,
+                        statusMessageRu = if (resp.isSuccessful) "Радары активны (каждые 10 мин)" else "Ошибка радаров",
+                        requiresKey = false,
+                        hasKey = true
+                    )
+                }
+                "seven_timer" -> {
+                    val req = Request.Builder()
+                        .url("https://www.7timer.info/bin/astro.php?lon=$lon&lat=$lat&ac=0&unit=metric&output=json")
+                        .build()
+                    val resp = okHttpClient.newCall(req).execute()
+                    val ms = System.currentTimeMillis() - start
+                    DataSourcePingResult(
+                        id = id,
+                        nameRu = "7Timer! ASTRO",
+                        categoryRu = "Астро-видимость",
+                        isOnline = resp.isSuccessful,
+                        latencyMs = ms,
+                        statusMessageRu = if (resp.isSuccessful) "Модель астро-видимости онлайн" else "Сбой сервера 7Timer",
+                        requiresKey = false,
+                        hasKey = true
+                    )
+                }
+                "nasa_apod" -> {
+                    val apod = fetchNasaApod(apiKey)
+                    val ms = System.currentTimeMillis() - start
+                    val ok = apod != null
+                    DataSourcePingResult(
+                        id = id,
+                        nameRu = "NASA Open API",
+                        categoryRu = "Астрономические фото & APOD",
+                        isOnline = ok,
+                        latencyMs = ms,
+                        statusMessageRu = if (ok) "Подключен: «${apod?.title?.take(25)}...»" else "Ошибка NASA API",
+                        requiresKey = true,
+                        hasKey = apiKey.isNotBlank()
+                    )
+                }
+                else -> {
+                    DataSourcePingResult(
+                        id = id,
+                        nameRu = "Неизвестный источник",
+                        categoryRu = "Система",
+                        isOnline = true,
+                        latencyMs = 1,
+                        statusMessageRu = "Готов",
+                        requiresKey = false,
+                        hasKey = true
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            DataSourcePingResult(
+                id = id,
+                nameRu = id,
+                categoryRu = "Связь",
+                isOnline = false,
+                latencyMs = System.currentTimeMillis() - start,
+                statusMessageRu = e.message ?: "Сбой соединения",
+                requiresKey = false,
+                hasKey = false
+            )
+        }
     }
 }

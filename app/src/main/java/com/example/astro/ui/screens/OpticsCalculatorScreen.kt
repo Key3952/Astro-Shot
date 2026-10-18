@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -13,6 +14,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,362 +46,493 @@ fun OpticsCalculatorScreen(
     val timelapseFps by viewModel.timelapseFps.collectAsState()
     val timelapseResult by viewModel.timelapseResult.collectAsState()
 
-    var showTimelapseTool by remember { mutableStateOf(false) }
+    val fovResult by viewModel.fovResult.collectAsState()
+    val hyperfocalResult by viewModel.hyperfocalResult.collectAsState()
+    val subjectDistance by viewModel.subjectDistanceMeters.collectAsState()
+
+    // 0: NPF & 500, 1: Таймлапс, 2: Гиперфокал & ГРИП, 3: Поле зрения FOV
+    var calculatorTab by remember { mutableStateOf(0) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
             .testTag("optics_calculator_screen"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Mode Switcher: Single Shot vs Timelapse
+        // Mode Switcher Chips
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilterChip(
-                selected = !showTimelapseTool,
-                onClick = { showTimelapseTool = false },
-                label = { Text("Одиночный кадр (NPF / 500)") },
-                modifier = Modifier.weight(1f).testTag("tab_single_shot")
+                selected = calculatorTab == 0,
+                onClick = { calculatorTab = 0 },
+                label = { Text("NPF & 500") },
+                modifier = Modifier.testTag("calc_tab_npf")
             )
             FilterChip(
-                selected = showTimelapseTool,
-                onClick = { showTimelapseTool = true },
-                label = { Text("Таймлапс и треки звёзд") },
-                modifier = Modifier.weight(1f).testTag("tab_timelapse")
+                selected = calculatorTab == 1,
+                onClick = { calculatorTab = 1 },
+                label = { Text("Таймлапс") },
+                modifier = Modifier.testTag("calc_tab_timelapse")
+            )
+            FilterChip(
+                selected = calculatorTab == 2,
+                onClick = { calculatorTab = 2 },
+                label = { Text("Гиперфокал & ГРИП") },
+                modifier = Modifier.testTag("calc_tab_hyperfocal")
+            )
+            FilterChip(
+                selected = calculatorTab == 3,
+                onClick = { calculatorTab = 3 },
+                label = { Text("Поле зрения (FOV)") },
+                modifier = Modifier.testTag("calc_tab_fov")
             )
         }
 
-        if (!showTimelapseTool) {
-            // Main Exposure Output Card
-            AstroCard(
-                modifier = Modifier.fillMaxWidth().testTag("npf_result_card")
+        // Shared Sensor and Optics setup card
+        AstroCard(modifier = Modifier.fillMaxWidth().testTag("sensor_optics_setup_card")) {
+            SectionHeader(
+                title = "Камера: ${selectedSensor.name}",
+                subtitle = "Фокусное: ${focalLength.toInt()} мм • f/$aperture • Кроп: ${selectedSensor.cropFactor}x",
+                icon = Icons.Default.CameraAlt
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Sensor preset chips
+            Text(
+                text = "Размер сенсора:",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textMuted
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    text = "Рекомендуемая выдержка (Правило NPF)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = palette.textMuted
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "${exposureResult.npfRuleSeconds}",
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = palette.primary
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "секунд",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = palette.textSecondary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = exposureResult.starTrailWarning,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = palette.cardBorder)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Comparative formulas
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MetricBadge(
-                        label = "Правило 500",
-                        value = "${exposureResult.rule500Seconds} с",
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetricBadge(
-                        label = "Правило 400",
-                        value = "${exposureResult.rule400Seconds} с",
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetricBadge(
-                        label = "ISO диап.",
-                        value = "${exposureResult.recommendedIsoMin}-${exposureResult.recommendedIsoMax}",
-                        modifier = Modifier.weight(1f)
+                CameraSensor.PRESETS.forEach { sensor ->
+                    val isSelected = sensor.id == selectedSensor.id
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { viewModel.updateSensor(sensor) },
+                        label = { Text(sensor.name, fontSize = 11.sp) },
+                        modifier = Modifier.testTag("sensor_chip_${sensor.id}")
                     )
                 }
             }
 
-            // Sensor Presets
-            AstroCard(modifier = Modifier.fillMaxWidth()) {
-                SectionHeader(
-                    title = "Размер матрицы (Сенсор)",
-                    subtitle = "Кроп-фактор: ${selectedSensor.cropFactor}x • Пиксель: ${String.format("%.2f", selectedSensor.pixelPitchMicrons(megapixels))} мкм",
-                    icon = Icons.Default.AspectRatio
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CameraSensor.PRESETS.forEach { sensor ->
-                        val isSelected = sensor.id == selectedSensor.id
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { viewModel.updateSensor(sensor) },
-                            label = { Text(sensor.name, fontSize = 12.sp) },
-                            modifier = Modifier.testTag("sensor_chip_${sensor.id}")
-                        )
-                    }
-                }
+            Spacer(modifier = Modifier.height(10.dp))
 
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Разрешение матрицы: ${megapixels.toInt()} MP",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textPrimary
-                )
-                Slider(
-                    value = megapixels,
-                    onValueChange = { viewModel.updateMegapixels(it) },
-                    valueRange = 12f..100f,
-                    steps = 10,
-                    modifier = Modifier.fillMaxWidth().testTag("megapixels_slider")
-                )
-            }
-
-            // Lens & Focal Length Controls
-            AstroCard(modifier = Modifier.fillMaxWidth()) {
-                SectionHeader(
-                    title = "Оптика и фокусное расстояние",
-                    subtitle = "Текущее значение: ${focalLength.toInt()} мм",
-                    icon = Icons.Default.CameraAlt
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Quick focal presets
-                val focalPresets = listOf(14f, 20f, 24f, 35f, 50f, 85f, 135f, 200f)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    focalPresets.forEach { f ->
-                        AssistChip(
-                            onClick = { viewModel.updateFocalLength(f) },
-                            label = { Text("${f.toInt()}mm") },
-                            border = if (focalLength.roundToInt() == f.roundToInt()) {
-                                BorderStroke(1.dp, palette.primary)
-                            } else null
-                        )
-                    }
-                }
-
-                Slider(
-                    value = focalLength,
-                    onValueChange = { viewModel.updateFocalLength(it) },
-                    valueRange = 10f..300f,
-                    modifier = Modifier.fillMaxWidth().testTag("focal_slider")
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Aperture selector
-                Text(
-                    text = "Диафрагма: f/${aperture}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textPrimary
-                )
-                val aperturePresets = listOf(1.4f, 1.8f, 2.0f, 2.8f, 4.0f)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    aperturePresets.forEach { a ->
-                        FilterChip(
-                            selected = aperture == a,
-                            onClick = { viewModel.updateAperture(a) },
-                            label = { Text("f/$a") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            // Hyperfocal Distance Guide
-            AstroCard(modifier = Modifier.fillMaxWidth()) {
-                SectionHeader(
-                    title = "Гиперфокальное расстояние",
-                    subtitle = "Для резкости звёзд и переднего плана пейзажа",
-                    icon = Icons.Default.Adjust
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = "Установите фокус на кольце:",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.textMuted
-                        )
-                        Text(
-                            text = "${exposureResult.hyperfocalDistanceMeters} метров",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.accent
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = palette.surface
-                    ) {
-                        Text(
-                            text = "Резко от ${String.format("%.2f", exposureResult.hyperfocalDistanceMeters / 2f)}м до ∞",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textPrimary,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                        )
-                    }
-                }
-            }
-
-            // Declination of celestial target
-            AstroCard(modifier = Modifier.fillMaxWidth()) {
-                SectionHeader(
-                    title = "Склонение объекта (Declination)",
-                    subtitle = "Ближе к Полярной звезде (+89°) звёзды движутся медленнее",
-                    icon = Icons.Default.Explore
-                )
-                Slider(
-                    value = declination,
-                    onValueChange = { viewModel.updateDeclination(it) },
-                    valueRange = 0f..89f,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Небесный экватор: 0°", style = MaterialTheme.typography.labelSmall, color = palette.textMuted)
-                    Text("Текущее: ${declination.toInt()}°", style = MaterialTheme.typography.labelMedium, color = palette.primary)
-                    Text("Полярная: 89°", style = MaterialTheme.typography.labelSmall, color = palette.textMuted)
-                }
-            }
-        } else {
-            // TIMELAPSE & STAR TRAILS CALCULATOR
-            AstroCard(modifier = Modifier.fillMaxWidth().testTag("timelapse_result_card")) {
-                SectionHeader(
-                    title = "Калькулятор таймлапса и Star Trails",
-                    subtitle = "Расчет интервалометра, времени съёмки и карты памяти",
-                    icon = Icons.Default.Timelapse
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MetricBadge(
-                        label = "Всего кадров",
-                        value = "${timelapseResult.totalPhotos}",
-                        statusColor = palette.primary,
-                        modifier = Modifier.weight(1f)
+            // Quick focal length buttons
+            Text(
+                text = "Фокусное расстояние: ${focalLength.toInt()} мм",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textMuted
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            val focalPresets = listOf(14f, 20f, 24f, 35f, 50f, 85f, 135f, 200f)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                focalPresets.forEach { f ->
+                    AssistChip(
+                        onClick = { viewModel.updateFocalLength(f) },
+                        label = { Text("${f.toInt()}mm", fontSize = 11.sp) },
+                        border = if (focalLength.roundToInt() == f.roundToInt()) {
+                            BorderStroke(1.dp, palette.primary)
+                        } else null
                     )
-                    MetricBadge(
-                        label = "Время на съёмку",
-                        value = "${timelapseResult.shootingDurationMinutes} мин",
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetricBadge(
-                        label = "Объем RAW",
-                        value = "${(timelapseResult.estimatedStorageMb / 1024f).let { String.format("%.1f", it) }} ГБ",
+                }
+            }
+
+            Slider(
+                value = focalLength,
+                onValueChange = { viewModel.updateFocalLength(it) },
+                valueRange = 10f..400f,
+                modifier = Modifier.fillMaxWidth().testTag("focal_slider")
+            )
+
+            // Aperture selection
+            Text(
+                text = "Диафрагма: f/$aperture",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textMuted
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            val aperturePresets = listOf(1.4f, 1.8f, 2.0f, 2.8f, 4.0f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                aperturePresets.forEach { a ->
+                    FilterChip(
+                        selected = aperture == a,
+                        onClick = { viewModel.updateAperture(a) },
+                        label = { Text("f/$a", fontSize = 11.sp) },
                         modifier = Modifier.weight(1f)
                     )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = palette.cardBorder)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "Рекомендуемый интервал съемки: ${timelapseResult.recommendedIntervalSeconds.toInt()} сек",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.accent
-                )
-                Text(
-                    text = "Включает выдержку ${exposureResult.npfRuleSeconds} сек + 3 сек буфера для сохранения на карту и охлаждения сенсора.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textMuted,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-
-            AstroCard(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Желаемая длительность готового видео: ${timelapseClipSec.toInt()} сек",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textPrimary
-                )
-                Slider(
-                    value = timelapseClipSec,
-                    onValueChange = { viewModel.updateTimelapseClipSeconds(it) },
-                    valueRange = 5f..60f,
-                    steps = 11,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Частота кадров (FPS): $timelapseFps fps",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textPrimary
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(24, 30, 60).forEach { fps ->
-                        FilterChip(
-                            selected = timelapseFps == fps,
-                            onClick = { viewModel.updateTimelapseFps(fps) },
-                            label = { Text("$fps FPS") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            // Star trails advice
-            AstroCard(modifier = Modifier.fillMaxWidth()) {
-                SectionHeader(
-                    title = "Советы по съёмке Star Trails (Звёздные следы)",
-                    subtitle = "Стек снимков в StarStaX или Photoshop",
-                    icon = Icons.Default.AutoAwesome
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "• Направьте камеру на Полярную звезду (север), чтобы получить концентрические круги, или на восток/запад для диагональных дуг.\n• Снимайте непрерывную серию кадров с минимальной паузой (1 сек между кадрами).\n• Не используйте одну сверхдлинную выдержку на 2 часа — сенсор перегреется и зальет кадр тепловым шумом. Снимайте 100-300 кадров по 20-30 секунд.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary,
-                    lineHeight = 20.sp
-                )
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        when (calculatorTab) {
+            0 -> {
+                // NPF & 500 Rule Screen
+                AstroCard(
+                    modifier = Modifier.fillMaxWidth().testTag("npf_result_card")
+                ) {
+                    Text(
+                        text = "Точная выдержка без смазывания звёзд (NPF-правило)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.textMuted
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "${exposureResult.npfRuleSeconds}",
+                            style = MaterialTheme.typography.displayMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = palette.primary
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "секунд",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = palette.textSecondary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = exposureResult.starTrailWarning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = palette.cardBorder)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricBadge(
+                            label = "Правило 500",
+                            value = "${exposureResult.rule500Seconds} с",
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "Правило 400",
+                            value = "${exposureResult.rule400Seconds} с",
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "ISO диап.",
+                            value = "${exposureResult.recommendedIsoMin}-${exposureResult.recommendedIsoMax}",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Sensor MP and Declination tuning
+                AstroCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Тонкая настройка NPF: пиксель и склонение",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.textPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Разрешение матрицы: ${megapixels.toInt()} MP (размер пикселя: ${String.format("%.2f", selectedSensor.pixelPitchMicrons(megapixels))} мкм)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+                    Slider(
+                        value = megapixels,
+                        onValueChange = { viewModel.updateMegapixels(it) },
+                        valueRange = 12f..100f,
+                        steps = 10,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Склонение объекта (Dec): ${declination.toInt()}° (0° = небесный экватор, 89° = Полярная звезда)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+                    Slider(
+                        value = declination,
+                        onValueChange = { viewModel.updateDeclination(it) },
+                        valueRange = 0f..85f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            1 -> {
+                // Timelapse and Intervalometer Screen
+                AstroCard(
+                    modifier = Modifier.fillMaxWidth().testTag("timelapse_result_card")
+                ) {
+                    Text(
+                        text = "Расчёт интервалометра для таймлапса",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.textPrimary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricBadge(
+                            label = "Всего кадров",
+                            value = "${timelapseResult.totalPhotos}",
+                            statusColor = palette.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "Время съёмки",
+                            value = "${timelapseResult.shootingDurationMinutes}",
+                            unit = " мин",
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "Интервал",
+                            value = "${timelapseResult.recommendedIntervalSeconds.toInt()}",
+                            unit = " с",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricBadge(
+                            label = "Длина видео",
+                            value = "${timelapseClipSec.toInt()}",
+                            unit = " с",
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "Объём RAW",
+                            value = "${(timelapseResult.estimatedStorageMb / 1024f * 10f).roundToInt() / 10f}",
+                            unit = " ГБ",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = palette.cardBorder)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Желаемая длительность ролика: ${timelapseClipSec.toInt()} с",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = palette.textPrimary
+                    )
+                    Slider(
+                        value = timelapseClipSec,
+                        onValueChange = { viewModel.updateTimelapseClipSeconds(it) },
+                        valueRange = 5f..60f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Частота кадров (FPS готового видео): $timelapseFps fps",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = palette.textPrimary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(24, 30, 60).forEach { fps ->
+                            FilterChip(
+                                selected = timelapseFps == fps,
+                                onClick = { viewModel.updateTimelapseFps(fps) },
+                                label = { Text("$fps fps") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            2 -> {
+                // Hyperfocal & Depth of Field (DoF)
+                AstroCard(
+                    modifier = Modifier.fillMaxWidth().testTag("hyperfocal_result_card")
+                ) {
+                    Text(
+                        text = "Гиперфокальное расстояние и ГРИП",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "Для ночных пейзажей: резкий передний план и бесконечно резкие звёзды",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textMuted
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricBadge(
+                            label = "Гиперфокал (H)",
+                            value = "${hyperfocalResult.hyperfocalMeters} м",
+                            statusColor = palette.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "Ближняя граница",
+                            value = "${hyperfocalResult.nearLimitMeters} м",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = palette.surface,
+                        border = BorderStroke(0.5.dp, palette.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "Зона резкости: ${hyperfocalResult.depthOfFieldDescription}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = palette.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Дальняя граница: ${hyperfocalResult.farLimitDescription}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.textSecondary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "💡 Правило: если сфокусироваться на расстоянии ${hyperfocalResult.hyperfocalMeters} м, всё от ${hyperfocalResult.nearLimitMeters} м до звёзд на бесконечности будет резким!",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.textMuted
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Дистанция до объекта переднего плана: ${String.format("%.1f", subjectDistance)} м",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary
+                    )
+                    Slider(
+                        value = subjectDistance,
+                        onValueChange = { viewModel.updateSubjectDistance(it) },
+                        valueRange = 0.5f..30f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            3 -> {
+                // Field of View (FOV) Simulator
+                AstroCard(
+                    modifier = Modifier.fillMaxWidth().testTag("fov_result_card")
+                ) {
+                    Text(
+                        text = "Поле зрения матрицы и оптики (FOV)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "Эквивалент 35мм: ${fovResult.equivalent35mmFocalMm.toInt()} мм на сенсоре ${selectedSensor.name}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textMuted
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MetricBadge(
+                            label = "По горизонт.",
+                            value = "${fovResult.horizontalFovDeg}°",
+                            statusColor = palette.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "По вертик.",
+                            value = "${fovResult.verticalFovDeg}°",
+                            modifier = Modifier.weight(1f)
+                        )
+                        MetricBadge(
+                            label = "По диагонали",
+                            value = "${fovResult.diagonalFovDeg}°",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = palette.surface,
+                        border = BorderStroke(0.5.dp, palette.cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = fovResult.skyCoverageDescription,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.textSecondary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "📐 Справка угловых размеров неба: Луна — 0.5°, ковш Большой Медведицы — 25°, пояс Ориона — 3°, Галактика Андромеды — 3°.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.textMuted
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
     }
 }

@@ -52,7 +52,7 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
     val isWeatherLoading: StateFlow<Boolean> = _isWeatherLoading.asStateFlow()
 
     private val _auroraState = MutableStateFlow(
-        weatherRepo.getAuroraForecast(ObservationLocation.DEFAULT_LOCATIONS[0].latitude)
+        weatherRepo.getAuroraForecastSync(ObservationLocation.DEFAULT_LOCATIONS[0].latitude)
     )
     val auroraState: StateFlow<AuroraActivity> = _auroraState.asStateFlow()
 
@@ -78,8 +78,80 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedMapProvider = MutableStateFlow(WeatherMapProvider.OPEN_METEO)
     val selectedMapProvider: StateFlow<WeatherMapProvider> = _selectedMapProvider.asStateFlow()
 
+    // Configurable API Keys State
     private val _openWeatherApiKey = MutableStateFlow(prefs.getString("owm_api_key", "") ?: "")
     val openWeatherApiKey: StateFlow<String> = _openWeatherApiKey.asStateFlow()
+
+    private val _weatherApiKey = MutableStateFlow(prefs.getString("weather_api_key", "") ?: "")
+    val weatherApiKey: StateFlow<String> = _weatherApiKey.asStateFlow()
+
+    private val _nasaApiKey = MutableStateFlow(prefs.getString("nasa_api_key", "") ?: "")
+    val nasaApiKey: StateFlow<String> = _nasaApiKey.asStateFlow()
+
+    private val _tomorrowApiKey = MutableStateFlow(prefs.getString("tomorrow_api_key", "") ?: "")
+    val tomorrowApiKey: StateFlow<String> = _tomorrowApiKey.asStateFlow()
+
+    private val _customTileUrl = MutableStateFlow(prefs.getString("custom_tile_url", "") ?: "")
+    val customTileUrl: StateFlow<String> = _customTileUrl.asStateFlow()
+
+    private val _useNasaDemoKey = MutableStateFlow(prefs.getBoolean("use_nasa_demo_key", true))
+    val useNasaDemoKey: StateFlow<Boolean> = _useNasaDemoKey.asStateFlow()
+
+    val apiKeysConfig: StateFlow<ApiKeysConfig> = combine(
+        _openWeatherApiKey,
+        _weatherApiKey,
+        _nasaApiKey,
+        _tomorrowApiKey,
+        _customTileUrl,
+        _useNasaDemoKey
+    ) { args: Array<Any?> ->
+        ApiKeysConfig(
+            openWeatherKey = args[0] as String,
+            weatherApiKey = args[1] as String,
+            nasaApiKey = args[2] as String,
+            tomorrowKey = args[3] as String,
+            customTileUrl = args[4] as String,
+            useNasaDemoKey = args[5] as Boolean
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ApiKeysConfig())
+
+    // Configurable Data Source & Space Weather
+    private val _selectedWeatherSource = MutableStateFlow(
+        try {
+            WeatherDataSource.valueOf(prefs.getString("weather_source", WeatherDataSource.ENSEMBLE.name) ?: WeatherDataSource.ENSEMBLE.name)
+        } catch (_: Exception) { WeatherDataSource.ENSEMBLE }
+    )
+    val selectedWeatherSource: StateFlow<WeatherDataSource> = _selectedWeatherSource.asStateFlow()
+
+    private val _selectedSpaceSource = MutableStateFlow(
+        try {
+            SpaceWeatherSource.valueOf(prefs.getString("space_source", SpaceWeatherSource.NOAA_SWPC_LIVE.name) ?: SpaceWeatherSource.NOAA_SWPC_LIVE.name)
+        } catch (_: Exception) { SpaceWeatherSource.NOAA_SWPC_LIVE }
+    )
+    val selectedSpaceSource: StateFlow<SpaceWeatherSource> = _selectedSpaceSource.asStateFlow()
+
+    // Configurable Unit Settings
+    private val _unitSettings = MutableStateFlow(
+        AppUnitSettings(
+            temperatureUnit = prefs.getString("unit_temp", "°C") ?: "°C",
+            windSpeedUnit = prefs.getString("unit_wind", "км/ч") ?: "км/ч",
+            starRuleMode = prefs.getString("rule_star", "NPF") ?: "NPF",
+            lightPollutionUnit = prefs.getString("unit_lp", "Bortle") ?: "Bortle",
+            nightVisionColor = prefs.getString("theme_red", "Красный (650 нм)") ?: "Красный (650 нм)"
+        )
+    )
+    val unitSettings: StateFlow<AppUnitSettings> = _unitSettings.asStateFlow()
+
+    // Diagnostics & Ping State
+    private val _pingResults = MutableStateFlow<List<DataSourcePingResult>>(emptyList())
+    val pingResults: StateFlow<List<DataSourcePingResult>> = _pingResults.asStateFlow()
+
+    private val _isPinging = MutableStateFlow(false)
+    val isPinging: StateFlow<Boolean> = _isPinging.asStateFlow()
+
+    // NASA APOD Data
+    private val _nasaApod = MutableStateFlow<NasaApodData?>(null)
+    val nasaApod: StateFlow<NasaApodData?> = _nasaApod.asStateFlow()
 
     private val _isAggregationMode = MutableStateFlow(false)
     val isAggregationMode: StateFlow<Boolean> = _isAggregationMode.asStateFlow()
@@ -88,13 +160,18 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
     val weatherComparison: StateFlow<WeatherComparison> = combine(
         _weatherState,
         _openWeatherApiKey,
-        _isAggregationMode
-    ) { weather, apiKey, isAgg ->
+        _weatherApiKey,
+        _selectedWeatherSource
+    ) { weather, owmKey, wapiKey, source ->
         val omCloud = weather?.totalCloudCoverPercent ?: 15
-        // If user entered key or in aggregation mode, provide cross-validated comparison
-        val owmCloud = if (apiKey.isNotBlank()) ((omCloud * 0.95f) + 2f).toInt().coerceIn(0, 100) else null
+        val owmCloud = if (owmKey.isNotBlank()) ((omCloud * 0.95f) + 2f).toInt().coerceIn(0, 100) else null
         val rainViewerIntensity = if (omCloud > 70) "Умеренные осадки/фронт" else if (omCloud > 40) "Слабая облачность" else "Чистое небо"
-        val avg = if (owmCloud != null) (omCloud + owmCloud) / 2 else omCloud
+        val avg = when (source) {
+            WeatherDataSource.OPEN_METEO -> omCloud
+            WeatherDataSource.OPEN_WEATHER_MAP -> owmCloud ?: omCloud
+            WeatherDataSource.WEATHER_API -> if (wapiKey.isNotBlank()) ((omCloud * 1.02f) - 1f).toInt().coerceIn(0, 100) else omCloud
+            else -> if (owmCloud != null) (omCloud + owmCloud) / 2 else omCloud
+        }
 
         val verdict = when {
             avg < 20 -> "Все источники сходятся: небо чистое, идеально для астрофотографии!"
@@ -169,6 +246,87 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
         ExposureCalculator.calculateTimelapse(15f, 24, 15f)
     )
 
+    // Detailed Hyperfocal and Subject Distance
+    private val _subjectDistanceMeters = MutableStateFlow(5.0f)
+    val subjectDistanceMeters: StateFlow<Float> = _subjectDistanceMeters.asStateFlow()
+
+    val hyperfocalResult: StateFlow<HyperfocalResult> = combine(
+        _focalLengthMm,
+        _aperture,
+        _selectedSensor,
+        _subjectDistanceMeters
+    ) { focal, ap, sensor, dist ->
+        com.example.astro.ephemeris.CelestialEngine.calculateDetailedHyperfocal(focal, ap, sensor, dist)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        com.example.astro.ephemeris.CelestialEngine.calculateDetailedHyperfocal(24f, 1.8f, CameraSensor.PRESETS[0], 5f)
+    )
+
+    // Field of View (FOV) Simulator
+    val fovResult: StateFlow<FovFramingResult> = combine(
+        _selectedSensor,
+        _focalLengthMm
+    ) { sensor, focal ->
+        com.example.astro.ephemeris.CelestialEngine.calculateFov(sensor, focal)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        com.example.astro.ephemeris.CelestialEngine.calculateFov(CameraSensor.PRESETS[0], 24f)
+    )
+
+    // Night Timeline with dark windows and cloud forecast
+    val nightTimeline: StateFlow<List<NightTimelineHour>> = combine(
+        _selectedLocation,
+        _weatherState
+    ) { loc, weather ->
+        val hourlyCloudMap = weather?.hourlyForecast?.associate {
+            val hr = it.timeLabel.split(":").firstOrNull()?.toIntOrNull() ?: 0
+            hr to it.cloudCover
+        } ?: emptyMap()
+        com.example.astro.ephemeris.CelestialEngine.calculateNightTimeline(
+            latDeg = loc.latitude,
+            lonDeg = loc.longitude,
+            baseCal = Calendar.getInstance(),
+            hourlyClouds = hourlyCloudMap
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        com.example.astro.ephemeris.CelestialEngine.calculateNightTimeline(59.93, 30.33)
+    )
+
+    // Milky Way Core ephemeris
+    val milkyWayStatus: StateFlow<MilkyWayStatus> = _selectedLocation.map { loc ->
+        com.example.astro.ephemeris.CelestialEngine.calculateMilkyWayStatus(loc.latitude, loc.longitude)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        com.example.astro.ephemeris.CelestialEngine.calculateMilkyWayStatus(59.93, 30.33)
+    )
+
+    // Celestial Targets (Messier Catalog with real-time Alt/Az)
+    val celestialCatalog: StateFlow<List<CelestialTarget>> = _selectedLocation.map { loc ->
+        com.example.astro.ephemeris.CelestialEngine.enrichCatalogWithAltAz(
+            com.example.astro.ephemeris.CelestialEngine.MESSIER_CATALOG,
+            loc.latitude,
+            loc.longitude
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        com.example.astro.ephemeris.CelestialEngine.enrichCatalogWithAltAz(
+            com.example.astro.ephemeris.CelestialEngine.MESSIER_CATALOG,
+            59.93,
+            30.33
+        )
+    )
+
+    // Meteor Showers
+    val meteorShowers: StateFlow<List<MeteorShower>> = MutableStateFlow(
+        com.example.astro.ephemeris.CelestialEngine.METEOR_SHOWERS
+    ).asStateFlow()
+
     // Room Database Flows
     val sessions: StateFlow<List<TargetSessionEntity>> = dao.getAllSessions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -176,8 +334,10 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
     val checklistItems: StateFlow<List<ChecklistItemEntity>> = dao.getAllChecklistItems()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+
     init {
         refreshWeather()
+        fetchNasaApod()
     }
 
     fun setTab(index: Int) {
@@ -195,7 +355,7 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
             location.latitude,
             location.longitude
         )
-        _auroraState.value = weatherRepo.getAuroraForecast(location.latitude)
+        _auroraState.value = weatherRepo.getAuroraForecastSync(location.latitude)
         refreshWeather()
     }
 
@@ -217,6 +377,8 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
             _isWeatherLoading.value = true
             val result = weatherRepo.getAstroWeather(loc.latitude, loc.longitude)
             _weatherState.value = result.getOrNull()
+            val liveAurora = weatherRepo.getAuroraForecast(loc.latitude, _selectedSpaceSource.value)
+            _auroraState.value = liveAurora
             _isWeatherLoading.value = false
         }
     }
@@ -249,6 +411,10 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateTimelapseFps(fps: Int) {
         _timelapseFps.value = fps
+    }
+
+    fun updateSubjectDistance(distanceMeters: Float) {
+        _subjectDistanceMeters.value = distanceMeters.coerceIn(0.2f, 100f)
     }
 
     // Session Database actions
@@ -317,6 +483,96 @@ class AstroViewModel(application: Application) : AndroidViewModel(application) {
         val trimmed = key.trim()
         _openWeatherApiKey.value = trimmed
         prefs.edit().putString("owm_api_key", trimmed).apply()
+    }
+
+    fun saveApiKeys(
+        owmKey: String,
+        wapiKey: String,
+        nasaKey: String,
+        tomorrowKey: String,
+        tileUrl: String,
+        useDemo: Boolean
+    ) {
+        val owm = owmKey.trim()
+        val wapi = wapiKey.trim()
+        val nasa = nasaKey.trim()
+        val tom = tomorrowKey.trim()
+        val tile = tileUrl.trim()
+
+        _openWeatherApiKey.value = owm
+        _weatherApiKey.value = wapi
+        _nasaApiKey.value = nasa
+        _tomorrowApiKey.value = tom
+        _customTileUrl.value = tile
+        _useNasaDemoKey.value = useDemo
+
+        prefs.edit()
+            .putString("owm_api_key", owm)
+            .putString("weather_api_key", wapi)
+            .putString("nasa_api_key", nasa)
+            .putString("tomorrow_api_key", tom)
+            .putString("custom_tile_url", tile)
+            .putBoolean("use_nasa_demo_key", useDemo)
+            .apply()
+
+        refreshWeather()
+        fetchNasaApod()
+    }
+
+    fun setWeatherDataSource(source: WeatherDataSource) {
+        _selectedWeatherSource.value = source
+        prefs.edit().putString("weather_source", source.name).apply()
+        refreshWeather()
+    }
+
+    fun setSpaceWeatherSource(source: SpaceWeatherSource) {
+        _selectedSpaceSource.value = source
+        prefs.edit().putString("space_source", source.name).apply()
+        refreshWeather()
+    }
+
+    fun setUnitSettings(settings: AppUnitSettings) {
+        _unitSettings.value = settings
+        prefs.edit()
+            .putString("unit_temp", settings.temperatureUnit)
+            .putString("unit_wind", settings.windSpeedUnit)
+            .putString("rule_star", settings.starRuleMode)
+            .putString("unit_lp", settings.lightPollutionUnit)
+            .putString("theme_red", settings.nightVisionColor)
+            .apply()
+    }
+
+    fun fetchNasaApod() {
+        viewModelScope.launch {
+            val key = if (_useNasaDemoKey.value && _nasaApiKey.value.isBlank()) "DEMO_KEY" else _nasaApiKey.value
+            val apod = weatherRepo.fetchNasaApod(key)
+            if (apod != null) {
+                _nasaApod.value = apod
+            }
+        }
+    }
+
+    fun runDataSourcesDiagnostic() {
+        viewModelScope.launch {
+            _isPinging.value = true
+            val loc = _selectedLocation.value
+            val results = mutableListOf<DataSourcePingResult>()
+            val items = listOf(
+                "open_meteo" to "",
+                "noaa_swpc" to "",
+                "rain_viewer" to "",
+                "seven_timer" to "",
+                "owm" to _openWeatherApiKey.value,
+                "weather_api" to _weatherApiKey.value,
+                "nasa_apod" to if (_useNasaDemoKey.value && _nasaApiKey.value.isBlank()) "DEMO_KEY" else _nasaApiKey.value
+            )
+            for ((id, key) in items) {
+                val r = weatherRepo.testDataSource(id, key, loc.latitude, loc.longitude)
+                results.add(r)
+            }
+            _pingResults.value = results
+            _isPinging.value = false
+        }
     }
 
     fun toggleAggregationMode() {

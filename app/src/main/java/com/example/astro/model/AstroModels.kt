@@ -207,3 +207,172 @@ data class WeatherComparison(
     val averageCloudCover: Int,
     val verdictRu: String
 )
+
+/**
+ * Hourly night timeline slice for dark sky visualization
+ */
+data class NightTimelineHour(
+    val hourString: String,
+    val hourOfDay: Int,
+    val sunAltitudeDeg: Double,
+    val moonAltitudeDeg: Double,
+    val moonIlluminationPercent: Int,
+    val milkyWayAltitudeDeg: Double,
+    val twilightPhaseRu: String,
+    val cloudCoverPercent: Int,
+    val qualityScore: Int,
+    val isBestDarkWindow: Boolean,
+    val isMilkyWayVisible: Boolean
+)
+
+/**
+ * Celestial target in deep-sky catalog (Messier & famous targets)
+ */
+data class CelestialTarget(
+    val id: String,
+    val nameRu: String,
+    val catalogId: String,
+    val constellationRu: String,
+    val categoryRu: String,
+    val apparentMagnitude: Float,
+    val angularSize: String,
+    val rightAscensionHours: Double,
+    val declinationDeg: Double,
+    val recommendedFocalLength: String,
+    val recommendedFilters: String,
+    val difficultyRu: String,
+    val descriptionRu: String,
+    val currentAltitudeDeg: Double = 0.0,
+    val currentAzimuthDeg: Double = 0.0,
+    val visibilityStatusRu: String = ""
+)
+
+/**
+ * Meteor shower calendar event
+ */
+data class MeteorShower(
+    val id: String,
+    val nameRu: String,
+    val peakDateRu: String,
+    val activeRangeRu: String,
+    val zhr: Int, // Zenithal Hourly Rate
+    val radiantConstellation: String,
+    val velocityKmS: Int,
+    val parentBody: String,
+    val currentStatusRu: String,
+    val shootingTipsRu: String
+)
+
+/**
+ * Real-time Milky Way galactic core ephemeris & status
+ */
+data class MilkyWayStatus(
+    val coreAltitudeDeg: Double,
+    val coreAzimuthDeg: Double,
+    val cardinalDirectionRu: String,
+    val maxAltitudeTonightDeg: Double,
+    val riseTime: String,
+    val setTime: String,
+    val bestWindowTime: String,
+    val visibilitySummary: String,
+    val isCoreVisible: Boolean,
+    val northernBranchZenith: Boolean
+)
+
+/**
+ * Field of view calculation result
+ */
+data class FovFramingResult(
+    val horizontalFovDeg: Float,
+    val verticalFovDeg: Float,
+    val diagonalFovDeg: Float,
+    val equivalent35mmFocalMm: Float,
+    val skyCoverageDescription: String
+)
+
+/**
+ * Depth of field and hyperfocal calculation result
+ */
+data class HyperfocalResult(
+    val hyperfocalMeters: Float,
+    val nearLimitMeters: Float,
+    val farLimitDescription: String,
+    val depthOfFieldDescription: String
+)
+
+/**
+ * Weather & atmospheric data provider options
+ */
+enum class WeatherDataSource(
+    val titleRu: String,
+    val subtitleRu: String,
+    val requiresKey: Boolean
+) {
+    ENSEMBLE("Ансамбль (Консенсус)", "Сводка всех доступных источников", false),
+    OPEN_METEO("Open-Meteo", "DWD ICON / ECMWF модели (Без ключа)", false),
+    OPEN_WEATHER_MAP("OpenWeatherMap", "OWM 2.5 / 3.0 OneCall (По ключу)", true),
+    WEATHER_API("WeatherAPI.com", "Астрономический прогноз (По ключу)", true),
+    SEVEN_TIMER("7Timer! ASTRO", "Seeing & Transparency для астрономов", false),
+    TOMORROW_IO("Tomorrow.io", "Высокое разрешение облачности", true)
+}
+
+/**
+ * Solar & geomagnetic space weather sources
+ */
+enum class SpaceWeatherSource(
+    val titleRu: String,
+    val subtitleRu: String
+) {
+    NOAA_SWPC_LIVE("NOAA SWPC Live", "Прямой спутниковый поток США (Kp-индекс)"),
+    SIMULATED_CYCLE_25("Модель Солнечного цикла 25", "Автономный расчет геомагнитных бурь")
+}
+
+/**
+ * API Keys bundle for all connected external services
+ */
+data class ApiKeysConfig(
+    val openWeatherKey: String = "",
+    val weatherApiKey: String = "",
+    val nasaApiKey: String = "",
+    val tomorrowKey: String = "",
+    val customTileUrl: String = "",
+    val useNasaDemoKey: Boolean = true
+)
+
+/**
+ * User-configurable measurement units & calculation preferences
+ */
+data class AppUnitSettings(
+    val temperatureUnit: String = "°C",
+    val windSpeedUnit: String = "км/ч",
+    val starRuleMode: String = "NPF",
+    val lightPollutionUnit: String = "Bortle",
+    val nightVisionColor: String = "Красный (650 нм)"
+)
+
+/**
+ * Live connectivity and status diagnostic for an external data source
+ */
+data class DataSourcePingResult(
+    val id: String,
+    val nameRu: String,
+    val categoryRu: String,
+    val isOnline: Boolean,
+    val latencyMs: Long,
+    val statusMessageRu: String,
+    val requiresKey: Boolean,
+    val hasKey: Boolean
+)
+
+/**
+ * NASA Astronomy Picture of the Day (APOD)
+ */
+data class NasaApodData(
+    val title: String,
+    val date: String,
+    val explanation: String,
+    val url: String,
+    val hdUrl: String? = null,
+    val mediaType: String = "image"
+)
+

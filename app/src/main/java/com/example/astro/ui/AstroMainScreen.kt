@@ -46,6 +46,7 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
     val isGpsSearching by viewModel.isGpsSearching.collectAsState()
 
     var showLocationDialog by remember { mutableStateOf(false) }
+    var isSettingsOpen by remember { mutableStateOf(false) }
 
     // Runtime Permission Launcher for GPS
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -75,12 +76,22 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
         )
     }
 
-    // If on a secondary tab, pressing Back takes you back to Dashboard
-    BackHandler(enabled = currentTab != 0) {
-        viewModel.setTab(0)
+    // If in Settings or on a secondary tab, pressing Back handles navigation smoothly
+    BackHandler(enabled = isSettingsOpen || currentTab != 0) {
+        if (isSettingsOpen) {
+            isSettingsOpen = false
+        } else {
+            viewModel.setTab(0)
+        }
     }
 
-    Scaffold(
+    if (isSettingsOpen) {
+        SettingsScreen(
+            viewModel = viewModel,
+            onNavigateBack = { isSettingsOpen = false }
+        )
+    } else {
+        Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -174,6 +185,23 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
                             modifier = Modifier.size(20.dp)
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Settings & API Keys Button
+                    IconButton(
+                        onClick = { isSettingsOpen = true },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("settings_top_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Настройки приложения и API",
+                            tint = palette.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = palette.background,
@@ -239,14 +267,22 @@ fun AstroMainScreen(viewModel: AstroViewModel) {
                 label = "ScreenTransition"
             ) { tab ->
                 when (tab) {
-                    0 -> DashboardScreen(viewModel = viewModel, onNavigateToTab = { viewModel.setTab(it) })
+                    0 -> DashboardScreen(
+                        viewModel = viewModel,
+                        onNavigateToTab = { viewModel.setTab(it) },
+                        onOpenSettings = { isSettingsOpen = true }
+                    )
                     1 -> OpticsCalculatorScreen(viewModel = viewModel)
-                    2 -> WeatherAuroraScreen(viewModel = viewModel)
+                    2 -> WeatherAuroraScreen(
+                        viewModel = viewModel,
+                        onOpenSettings = { isSettingsOpen = true }
+                    )
                     3 -> MoonEphemerisScreen(viewModel = viewModel)
                     4 -> PlannerScreen(viewModel = viewModel)
                 }
             }
         }
+    }
     }
 
     if (showLocationDialog) {

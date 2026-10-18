@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to compact and balance the Overview (Обзор) screen, implement GPS location retrieval on button click, add North-Western Russian cities and dark-sky destinations, introduce an interactive multi-provider weather & cloud radar map (OpenWeatherMap, Open-Meteo, RainViewer) with source switcher, and provide step-by-step instructions on obtaining free API keys.",
-  "updatedAt": "2026-10-17T13:39:14.273810300Z",
+  "summary": "Комплексный план внедрения: компактный круговой индикатор качества неба на экране Обзор, GPS локация и города Северо-Запада РФ, интерактивная карта облачности (RainViewer, Open-Meteo, OWM), интерактивный почасовой таймлайн ночи с окнами темноты и положением Млечного Пути, планировщик объектов (Млечный Путь, каталог Мессье, метеорные потоки), полный набор полевых калькуляторов (NPF/500, таймлапс/интервалометр, гиперфокал/DoF, FOV кадра) и раздельная выгрузка двух APK в CI/CD.",
+  "updatedAt": "2026-10-18T10:24:28.216228672Z",
   "requestFeedback": true,
   "userFacing": true
 }

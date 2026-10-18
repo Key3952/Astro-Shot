@@ -1,5 +1,6 @@
 package com.example.astro.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -26,7 +27,8 @@ import com.example.astro.ui.theme.LocalAstroPalette
 @Composable
 fun DashboardScreen(
     viewModel: AstroViewModel,
-    onNavigateToTab: (Int) -> Unit
+    onNavigateToTab: (Int) -> Unit,
+    onOpenSettings: () -> Unit = {}
 ) {
     val palette = LocalAstroPalette.current
     val scrollState = rememberScrollState()
@@ -39,6 +41,9 @@ fun DashboardScreen(
     val aurora by viewModel.auroraState.collectAsState()
     val exposure by viewModel.exposureResult.collectAsState()
     val focal by viewModel.focalLengthMm.collectAsState()
+    val milkyWay by viewModel.milkyWayStatus.collectAsState()
+    val weatherSource by viewModel.selectedWeatherSource.collectAsState()
+    val apodData by viewModel.nasaApod.collectAsState()
 
     Column(
         modifier = Modifier
@@ -48,6 +53,50 @@ fun DashboardScreen(
             .testTag("dashboard_screen"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Data Sources & API Keys Quick Bar
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = palette.surface,
+            border = BorderStroke(0.5.dp, palette.cardBorder),
+            onClick = onOpenSettings,
+            modifier = Modifier.fillMaxWidth().testTag("dashboard_settings_banner")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = palette.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Источник: ${weatherSource.titleRu.take(20)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Настройки API",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.accent,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = palette.accent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
         // Location & Sky Quality Card - Compact & Balanced
         AstroCard(
             modifier = Modifier.fillMaxWidth().testTag("sky_quality_hero_card")
@@ -192,8 +241,11 @@ fun DashboardScreen(
             }
         }
 
-        // Astronomical Darkness Window
-        AstroCard(modifier = Modifier.fillMaxWidth()) {
+        // Astronomical Darkness & Milky Way Window Card
+        AstroCard(
+            modifier = Modifier.fillMaxWidth().testTag("darkness_dashboard_card"),
+            onClick = { onNavigateToTab(4) }
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -217,13 +269,13 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "Астрономическая темнота",
+                            text = "Астрономическая темнота & Млечный Путь",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = palette.textPrimary
                         )
                         Text(
-                            text = "Солнце ниже -18° (без засветки)",
+                            text = "Окно темноты: ${twilight.astroTwilightStart} – ${twilight.astroTwilightEnd}",
                             style = MaterialTheme.typography.labelSmall,
                             color = palette.textMuted
                         )
@@ -235,7 +287,7 @@ fun DashboardScreen(
                     color = palette.surface
                 ) {
                     Text(
-                        text = "${twilight.darkSkyDurationHours} ч окна",
+                        text = "${twilight.darkSkyDurationHours} ч",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = palette.primary,
@@ -247,17 +299,20 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Старт: ${twilight.astroTwilightStart}",
+                    text = if (milkyWay.isCoreVisible) "🌌 Ядро Галактики: ${milkyWay.coreAltitudeDeg}° (${milkyWay.cardinalDirectionRu})" else "🌌 " + milkyWay.visibilitySummary.take(45) + "...",
                     style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
+                    color = palette.textSecondary,
+                    modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = "Финиш: ${twilight.astroTwilightEnd}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.textSecondary
+                    text = "Таймлайн >",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.primary,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }

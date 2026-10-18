@@ -43,7 +43,8 @@ fun WeatherMapViewer(
     onSelectLayer: (WeatherMapLayer) -> Unit,
     onSelectProvider: (WeatherMapProvider) -> Unit,
     onToggleAggregation: () -> Unit,
-    onSaveApiKey: (String) -> Unit
+    onSaveApiKey: (String) -> Unit,
+    onOpenSettings: (() -> Unit)? = null
 ) {
     val palette = LocalAstroPalette.current
 
@@ -372,6 +373,7 @@ fun WeatherMapViewer(
                 onSaveApiKey(it)
                 showApiKeyDialog = false
             },
+            onOpenSettings = onOpenSettings,
             onDismiss = { showApiKeyDialog = false }
         )
     }
@@ -381,6 +383,7 @@ fun WeatherMapViewer(
 private fun ApiKeySetupDialog(
     currentKey: String,
     onSave: (String) -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val palette = LocalAstroPalette.current
@@ -457,6 +460,22 @@ private fun ApiKeySetupDialog(
                         modifier = Modifier.weight(1f).testTag("save_key_button")
                     ) {
                         Text("Сохранить", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (onOpenSettings != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onOpenSettings()
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("open_all_api_settings_btn"),
+                        border = BorderStroke(0.5.dp, palette.primary)
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = palette.primary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Все настройки API (NASA, WeatherAPI, Радары)", color = palette.primary, fontSize = 11.sp)
                     }
                 }
             }

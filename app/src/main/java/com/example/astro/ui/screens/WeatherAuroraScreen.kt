@@ -30,7 +30,8 @@ import com.example.astro.ui.components.WeatherMapViewer
 
 @Composable
 fun WeatherAuroraScreen(
-    viewModel: AstroViewModel
+    viewModel: AstroViewModel,
+    onOpenSettings: () -> Unit = {}
 ) {
     val palette = LocalAstroPalette.current
     val scrollState = rememberScrollState()
@@ -54,7 +55,7 @@ fun WeatherAuroraScreen(
             .testTag("weather_aurora_screen"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Top Action Bar with Refresh
+        // Top Action Bar with Refresh & Settings
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -74,22 +75,35 @@ fun WeatherAuroraScreen(
                 )
             }
 
-            IconButton(
-                onClick = { viewModel.refreshWeather() },
-                modifier = Modifier.testTag("refresh_weather_button")
-            ) {
-                if (isWeatherLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = palette.primary,
-                        strokeWidth = 2.dp
-                    )
-                } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.testTag("weather_open_settings_button")
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Обновить погоду",
-                        tint = palette.primary
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Настройки API",
+                        tint = palette.textSecondary
                     )
+                }
+
+                IconButton(
+                    onClick = { viewModel.refreshWeather() },
+                    modifier = Modifier.testTag("refresh_weather_button")
+                ) {
+                    if (isWeatherLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = palette.primary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Обновить погоду",
+                            tint = palette.primary
+                        )
+                    }
                 }
             }
         }
@@ -106,7 +120,8 @@ fun WeatherAuroraScreen(
                 onSelectLayer = { viewModel.setMapLayer(it) },
                 onSelectProvider = { viewModel.setMapProvider(it) },
                 onToggleAggregation = { viewModel.toggleAggregationMode() },
-                onSaveApiKey = { viewModel.setOpenWeatherApiKey(it) }
+                onSaveApiKey = { viewModel.setOpenWeatherApiKey(it) },
+                onOpenSettings = onOpenSettings
             )
         }
 
